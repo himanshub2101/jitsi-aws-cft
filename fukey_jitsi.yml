@@ -45,7 +45,6 @@ Mappings:
       prod: Jitsi
 
 Resources:
-
   WakeUpAction:
     Type: AWS::AutoScaling::ScheduledAction
     Properties:
@@ -67,6 +66,28 @@ Resources:
       DesiredCapacity: 0
       MinSize: 0
       MaxSize: 0
+      
+  # 3. Application Load Balancer
+  FukeyEducationApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Subnets: !Ref Subnets
+      SecurityGroups: [!Ref StaticSecurityGroupIds]
+
+  # 1. Define the ALB Target Group
+  FukeyEducationTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: "FukeyEducationTargetGroup"
+      Protocol: HTTPS
+      Port: 443
+      VpcId: !Ref VPCId # Reference an existing VPC logical ID or parameter
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      TargetType: instance
+      Name: !Sub '${AWS::StackName}-TG'
+      # other properties like HealthCheckIntervalSeconds, HealthyThresholdCount, etc.
 
   FukeyEducationAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -78,6 +99,20 @@ Resources:
       MinSize: '1'
       MaxSize: '1'
       DesiredCapacity: '1'
+      TargetGroupARNs:
+        - !Ref FukeyEducationTargetGroup # Reference the logical ID of the target group
+
+  # 3. Define an ALB Listener and associated rules to forward traffic to the Target Group
+  # The Listener is associated with the ALB, which then uses the Target Group
+  FukeyEducationALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref FukeyEducationApplicationLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref FukeyEducationTargetGroup
+      Port: 80
+      Protocol: HTTP
 
   FukeyEducationLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
@@ -138,3 +173,8 @@ Resources:
     Properties:
       Roles:
         - !Ref IAMRole
+
+Outputs:
+  ALBDNSName:
+    Description: DNS name of the Application Load Balancer
+    Value: !GetAtt FukeyEducationApplicationLoadBalancer.DNSName
