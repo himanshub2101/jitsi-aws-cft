@@ -1,0 +1,140 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Fukey Education Jitsi Installation
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-0c204e5a43508e57d
+
+  Subnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Default: subnet-08446724a220161ec
+
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+
+  IAMRole:
+    Type: String
+    Default: FukeyEducationEC2Jitsi
+
+  StaticSecurityGroupIds:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+
+Mappings:
+  InstanceTypes:
+    ap-south-1:
+      dev: t2.micro
+      qa: t2.small
+      prod: t3.xlarge
+
+  AMIIDs:
+    ap-south-1:
+      dev: ami-07f07a6e1060cd2a8
+      qa: ami-07f07a6e1060cd2a8
+      prod: ami-07f07a6e1060cd2a8
+
+  FukeyEducationKeyName:
+    ap-south-1:
+      dev: Jitsi
+      qa: Jitsi
+      prod: Jitsi
+
+Resources:
+
+  WakeUpAction:
+    Type: AWS::AutoScaling::ScheduledAction
+    Properties:
+      AutoScalingGroupName: !Ref FukeyEducationAutoScalingGroup
+      ScheduledActionName: ScaleUpDaily
+      Recurrence: "30 9 * * *"
+      TimeZone: "Asia/Kolkata"
+      DesiredCapacity: 1
+      MinSize: 1
+      MaxSize: 1
+
+  ShutdownAction:
+    Type: AWS::AutoScaling::ScheduledAction
+    Properties:
+      AutoScalingGroupName: !Ref FukeyEducationAutoScalingGroup
+      ScheduledActionName: ScaleDownDaily
+      Recurrence: "30 10 * * *"
+      TimeZone: "Asia/Kolkata"
+      DesiredCapacity: 0
+      MinSize: 0
+      MaxSize: 0
+
+  FukeyEducationAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: !Ref Subnets
+      LaunchTemplate:
+        LaunchTemplateId: !Ref FukeyEducationLaunchTemplate
+        Version: !GetAtt FukeyEducationLaunchTemplate.LatestVersionNumber
+      MinSize: '1'
+      MaxSize: '1'
+      DesiredCapacity: '1'
+
+  FukeyEducationLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${AWS::StackName}-AdvancedTemplate
+      LaunchTemplateData:
+        ImageId:
+          Fn::FindInMap:
+            - AMIIDs
+            - !Ref AWS::Region
+            - !Ref Environment
+
+        InstanceType:
+          Fn::FindInMap:
+            - InstanceTypes
+            - !Ref AWS::Region
+            - !Ref Environment
+
+        KeyName:
+          Fn::FindInMap:
+            - FukeyEducationKeyName
+            - !Ref AWS::Region
+            - !Ref Environment
+
+        SecurityGroupIds: !Ref StaticSecurityGroupIds
+
+        IamInstanceProfile:
+          Arn: !GetAtt FukeyEducationInstanceProfile.Arn
+
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -e
+
+            apt update -y
+            apt install -y docker.io docker-compose git
+            systemctl enable docker
+            systemctl start docker
+
+            cd /opt
+            git clone https://github.com/himanshub2101/Jitsi-FukeyEducation.git
+            cd /opt/Jitsi-FukeyEducation
+
+            cp env.example .env
+            ./gen-passwords.sh
+
+            cat <<EOF >> .env
+            PUBLIC_URL=https://meet.fukeyeducation.com
+            ENABLE_AUTH=0
+            ENABLE_GUESTS=1
+            TZ=Asia/Kolkata
+            EOF
+
+            docker-compose up -d
+
+  FukeyEducationInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref IAMRole
