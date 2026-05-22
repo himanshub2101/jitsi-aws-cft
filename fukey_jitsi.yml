@@ -24,6 +24,7 @@ Parameters:
 
   StaticSecurityGroupIds:
     Type: List<AWS::EC2::SecurityGroup::Id>
+    Default: sg-03d9fe8fbb0a4c7c0
 
 Mappings:
   InstanceTypes:
@@ -34,9 +35,9 @@ Mappings:
 
   AMIIDs:
     ap-south-1:
-      dev: ami-07f07a6e1060cd2a8
-      qa: ami-07f07a6e1060cd2a8
-      prod: ami-07f07a6e1060cd2a8
+      dev: ami-0b525e61305c23c46
+      qa: ami-0b525e61305c23c46
+      prod: ami-0b525e61305c23c46
 
   FukeyEducationKeyName:
     ap-south-1:
@@ -73,7 +74,7 @@ Resources:
     Properties:
       Scheme: internet-facing
       Subnets: !Ref Subnets
-      SecurityGroups: [!Ref StaticSecurityGroupIds]
+      SecurityGroups: !Ref StaticSecurityGroupIds
 
   # 1. Define the ALB Target Group
   FukeyEducationTargetGroup:
@@ -82,9 +83,9 @@ Resources:
       Name: "FukeyEducationTargetGroup"
       Protocol: HTTPS
       Port: 443
-      VpcId: !Ref VPCId # Reference an existing VPC logical ID or parameter
+      VpcId: !Ref VpcId # Reference an existing VPC logical ID or parameter
       HealthCheckPath: /
-      HealthCheckProtocol: HTTP
+      HealthCheckProtocol: HTTPS
       TargetType: instance
       Name: !Sub '${AWS::StackName}-TG'
       # other properties like HealthCheckIntervalSeconds, HealthyThresholdCount, etc.
@@ -96,9 +97,9 @@ Resources:
       LaunchTemplate:
         LaunchTemplateId: !Ref FukeyEducationLaunchTemplate
         Version: !GetAtt FukeyEducationLaunchTemplate.LatestVersionNumber
-      MinSize: '1'
-      MaxSize: '1'
-      DesiredCapacity: '1'
+      MinSize: '5'
+      MaxSize: '7'
+      DesiredCapacity: '5'
       TargetGroupARNs:
         - !Ref FukeyEducationTargetGroup # Reference the logical ID of the target group
 
@@ -111,8 +112,10 @@ Resources:
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref FukeyEducationTargetGroup
-      Port: 80
-      Protocol: HTTP
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+      - CertificateArn: "arn:aws:acm:ap-south-1:543583415208:certificate/45f32c5b-2e8b-4cb0-89fa-bb72becb4c85"
 
   FukeyEducationLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
@@ -148,9 +151,14 @@ Resources:
             set -e
 
             apt update -y
-            apt install -y docker.io docker-compose git
+            apt install -y docker.io docker-compose git python3-pip
             systemctl enable docker
             systemctl start docker
+
+            sleep 10
+
+            python3 -m venv /opt/my_env
+            source /opt/my_env/bin/activate
 
             cd /opt
             git clone https://github.com/himanshub2101/Jitsi-FukeyEducation.git
